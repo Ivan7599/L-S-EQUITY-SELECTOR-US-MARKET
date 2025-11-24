@@ -85,7 +85,7 @@ The code is organised as a **sequential pipeline**. The scripts are meant to be 
 
    * Base: `_0004_BaseInvestmentRanking.py`
    * LightGBM: `_0004_LightGBMInvestmentRanking.py`
-   * Ridge: `_0003_RidgeRanking.py`
+   * Ridge: `_0004_RidgeInvestmentRanking.py`
 
    These scripts:
 
@@ -179,7 +179,7 @@ python _0003_AnchorRanking.py
 # 4) Investment rankings (Base, LightGBM, Ridge)
 python _0004_BaseInvestmentRanking.py
 python _0004_LightGBMInvestmentRanking.py
-python _0003_RidgeRanking.py
+python _0004_RidgeInvestmentRanking.py
 
 # 5) Top/bottom deciles for all models
 python TopBottom_AllModels.py
