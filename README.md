@@ -1,5 +1,4 @@
 # L-S-EQUITY-SELECTOR-US-MARKET
-Here’s a README you can drop into `README.md` and tweak if you want to change paths or script names.
 
 ---
 
