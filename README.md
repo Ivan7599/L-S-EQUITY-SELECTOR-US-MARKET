@@ -1,77 +1,154 @@
-# L-S-EQUITY-SELECTOR-US-MARKET
+L-S-EQUITY-SELECTOR-US-MARKET
 
-Systematic **US equity long/short** stock-selection pipeline using **CRSP daily** market data and **Compustat quarterly** fundamentals (non-financials). The project’s central question is:
+Systematic US equity long/short stock selection with an explicit research question:
 
-> **Is machine learning stronger than economical logic?**  
-> We compare a transparent, economically structured baseline signal to ML models trained under strict anti-overfitting constraints and the **same information set**. <!-- :contentReference[oaicite:0]{index=0} -->
+Is machine learning stronger than economical logic when both use the same fundamental information set under strict anti-overfitting constraints?
 
-This repository implements the full workflow: **data → ratios → rankings → portfolios → performance → FF5+Mom alphas → VAMI → hit rates**.
+This repository implements an end-to-end pipeline using:
 
-> ⚠ **WRDS license required.** CRSP/Compustat data are proprietary and cannot be included in this repository.
+CRSP daily prices/returns (US common stocks; financials excluded)
 
----
+Compustat quarterly fundamentals (US firms; financials excluded)
 
-## What this project does
+Fama–French 5 factors (daily) + Momentum (daily) for alpha attribution
 
-At each quarterly investment date, we **rank the US stock universe** and form a **1 USD long / 1 USD short** portfolio by going:
-- **Long** the **top 10%** of stocks
-- **Short** the **bottom 10%** of stocks
+We build profitability / valuation / quality characteristics, produce five investable rankings (Base + 4 ML variants), form top/bottom decile long–short portfolios at quarterly investment dates, and evaluate:
 
-Portfolios are held in **overlapping 12-month cohorts** (new cohort each quarter; multiple cohorts coexist). <!-- :contentReference[oaicite:1]{index=1} -->
+L/S and leg performance (Sharpe, Sortino, drawdown, etc.)
 
-Models implemented:
+FF5+Mom alphas (full-sample + rolling)
 
-1. **Base (Economical Logic)**  
-   - Build a quarterly **composite score** from 3 pillars: profitability, valuation, quality  
-   - Convert the last ~3 years of composite history into 3 features: **slope (trend), average (level), stdev of changes (stability)**  
-   - Final score = simple combination of those components (interpretable). <!-- :contentReference[oaicite:2]{index=2} -->
+VAMI charts (single-model and multi-model comparisons)
 
-2. **LightGBM (Raw ratios as features)**  
-   - Predict forward returns (3m/6m/12m) from **raw ratios** at the investment date, then blend into a single ranking score. <!-- :contentReference[oaicite:3]{index=3} -->
+Hit rates (L/S, Long, Short)
 
-3. **LightGBMScore (Base-style engineered features)**  
-   - Same LightGBM framework, but features are **(slope, average, stdev)** of composite scores (Base information content). <!-- :contentReference[oaicite:4]{index=4} -->
+⚠ Important: This project requires a valid WRDS license.
+CRSP / Compustat data are proprietary and cannot be included in this repository.
 
-4. **Ridge (Raw ratios as features)**  
-   - Linear shrinkage model predicting forward returns (3m/6m/12m) from **raw ratios** (with strong regularization). <!-- :contentReference[oaicite:5]{index=5} -->
+1) Data requirements
 
-5. **RidgeScore (Base-style engineered features)**  
-   - Same Ridge framework, but features are **(slope, average, stdev)** of composite scores. <!-- :contentReference[oaicite:6]{index=6} -->
+You must source raw data from WRDS:
 
----
+Download from WRDS:
 
-## 1) Data requirements (WRDS / RawDatabase)
+CRSP → US Stock → Daily Stock File
 
-You must source all raw data from WRDS.
-
-### 1.1 WRDS extracts (SAS)
-Export the following files as SAS datasets:
-
-- CRSP daily returns: `RawReturns.sas7bdat`
-- Compustat quarterly fundamentals: `RawFundamentals.sas7bdat`
+Compustat North America → Fundamentals Quarterly
 
 Recommended universe filters:
-- US **common stocks**
-- **Exclude financial institutions** (SIC/GICS, or WRDS filters)
-- Large date coverage (e.g., 1980–today) <!-- :contentReference[oaicite:7]{index=7} -->
 
-### 1.2 Factor files
-Download daily factors and save as CSV:
-- `Factors5.csv` (daily FF5)
-- `Momentum.csv` (daily momentum)
+US common stocks only
 
-### 1.3 Folder layout (required)
+Exclude financial institutions (SIC/GICS or WRDS filter)
+
+Date range (e.g. 1980–today)
+
+Export as SAS files named:
+
+RawReturns.sas7bdat (CRSP daily)
+
+RawFundamentals.sas7bdat (Compustat quarterly)
+
 Create this folder in the project root:
 
-```text
 RawDatabase/
     RawReturns.sas7bdat
     RawFundamentals.sas7bdat
-    Factors5.csv
-    Momentum.csv
-2) Pipeline (scripts must be run in order)
-_0001_RawDataProcessing.py — Raw WRDS → Parquet (year-partitioned)
-Reads SAS files from RawDatabase/
+    Factors5.csv      # Fama–French 5 factors (daily)
+    Momentum.csv      # Momentum factor (daily)
+
+
+Factors5.csv and Momentum.csv should be the standard Kenneth French daily factor files saved as CSV.
+
+2) Repository structure
+
+After running the pipeline, the project will contain (high-level):
+
+FilteredRawData/
+    Returns_ds/               # CRSP daily returns, Parquet, partitioned by year=YYYY
+    Fundamentals_q/           # Compustat quarterly, Parquet, partitioned by year=YYYY
+    [Model]LS_Returns.parquet
+    [Model]Long_Returns.parquet
+    [Model]Short_Returns.parquet
+
+Ratios/
+    year=YYYY/ratios_YYYYMMDD.parquet
+
+BaseAnchorRanking/
+    year=YYYY/anchor_YYYYMMDD.parquet
+
+BaseInvestmentRanking/
+LightGBMInvestmentRanking/
+LightGBMScoreRanking/
+RidgeRanking/
+RidgeScoreRanking/
+    year=YYYY/*rank_YYYYMMDD.parquet
+
+BaseTopBottom10/
+LightGBMTopBottom10/
+LightGBMScoreTopBottom10/
+RidgeTopBottom10/
+RidgeScoreTopBottom10/
+    year=YYYY/topbottom10_YYYYMMDD.parquet
+
+3) Models and feature sets
+
+All models ultimately produce a cross-sectional ranking at each investment date. Portfolios are then formed by:
+
+Long: top 10%
+
+Short: bottom 10%
+
+Signals: signal = +1 (long), signal = -1 (short)
+
+Always 1 USD long / 1 USD short (dollar-neutral by construction)
+
+3.1 Base model (economical logic)
+
+A transparent baseline grounded in economic intuition:
+
+Build a composite score from profitability, valuation, and quality pillars at each anchor date.
+
+Convert the score into a persistent signal using 3-year dynamics:
+
+Average (level)
+
+Slope (trend)
+
+Stability (volatility / variability of score changes)
+
+Combine these into a single investment score and rank stocks cross-sectionally.
+
+3.2 Machine-learning models (two feature configurations)
+
+Each ML family is evaluated under two feature sets:
+
+A) Raw ratios as features
+
+Uses the cross-sectional raw fundamental ratios directly as predictors.
+
+B) “Score features” (same information content as Base dynamics)
+
+Uses only engineered features derived from the composite score over the last 3 years:
+
+slope / average / stdev (trend, level, stability)
+
+Models:
+
+LightGBMInvestmentRanking → LightGBM with raw ratios
+
+LightGBMScoreRanking → LightGBM with score features
+
+RidgeInvestmentRanking → Ridge regression with raw ratios
+
+RidgeScoreRanking → Ridge regression with score features
+
+4) Pipeline (run in order)
+Step 1 — WRDS SAS → Parquet (year-partitioned)
+
+_0001_RawDataProcessing.py
+
+Reads RawReturns.sas7bdat and RawFundamentals.sas7bdat
 
 Cleans identifiers and dates
 
@@ -79,171 +156,166 @@ Excludes financials
 
 Writes year-partitioned Parquet datasets:
 
-text
-Copier le code
 FilteredRawData/Returns_ds/year=YYYY/*.parquet
 FilteredRawData/Fundamentals_q/year=YYYY/*.parquet
-This design enables fast, low-memory processing on large panels. <!-- :contentReference[oaicite:8]{index=8} -->
 
-_0002_RatiosCalculation.py — Fundamental ratios (Profitability / Valuation / Quality)
-Builds quarterly anchor / as-of dates that approximate information availability (SEC filing lags)
+Step 2 — Ratios computation (profitability / valuation / quality)
 
-Joins CRSP market data with Compustat quarterly fundamentals available by the as-of date
+_0002_RatiosCalculation.py
 
-Computes a curated set of firm characteristics (ratios) across the three pillars
+Aligns quarterly fundamentals to investment “as-of” dates (quarterly anchors)
 
-Writes ratio snapshots:
+Computes a set of fundamental ratios spanning:
 
-text
-Copier le code
+Profitability
+
+Valuation
+
+Quality
+
+Cleans / winsorizes / standardizes directions (“higher is better”)
+
+Writes one snapshot per anchor:
+
 Ratios/year=YYYY/ratios_YYYYMMDD.parquet
-(Implementation respects an “available information” constraint by filtering fundamentals using announcement dates or lag rules.) <!-- :contentReference[oaicite:9]{index=9} -->
 
-_0003_AnchorRanking.py — Base composite score at each anchor
-Standardizes ratio directions so “higher = better”
+Step 3 — Anchor composite ranking (Base score per anchor)
 
-Aggregates the 3 pillars into a single composite anchor score
+_0003_AnchorRanking.py
 
-Writes snapshots:
+Aggregates ratios into a composite anchor score
 
-text
-Copier le code
+Writes per-anchor snapshots:
+
 BaseAnchorRanking/year=YYYY/anchor_YYYYMMDD.parquet
-Investment-date ranking scripts (3-year rolling dynamics)
-All ranking scripts use a rolling historical window (≈ 3 years / ~12 anchors) to build an investment-date score.
+
+Step 4 — Investment-date rankings (Base + 4 ML variants)
+
+These scripts produce investable rankings at each investment date:
 
 _0004_BaseInvestmentRanking.py
-Uses the Base composite score history
 
-Builds three interpretable features per stock:
+Features: score slope / average / stability over a 3-year lookback
 
-slope (trend)
+Output: BaseInvestmentRanking/year=*/invrank_YYYYMMDD.parquet
 
-average (level)
+_0004_LightGBMInvestmentRanking.py
 
-stdev of changes (stability)
-
-Writes:
-
-text
-Copier le code
-BaseInvestmentRanking/year=YYYY/invrank_YYYYMMDD.parquet
-<!-- :contentReference[oaicite:10]{index=10} -->
-_0004_LightGBMInvestmentRanking.py (features = raw ratios)
 Features: raw ratios
 
-Targets: forward returns at 3m / 6m / 12m; blended into one ranking score
+Output: LightGBMInvestmentRanking/year=*/LightGBMrank_YYYYMMDD.parquet
 
-Writes:
+_0004_LightGBMScoreRanking.py
 
-text
-Copier le code
-LightGBMInvestmentRanking/year=YYYY/LightGBMrank_YYYYMMDD.parquet
-<!-- :contentReference[oaicite:11]{index=11} -->
-_0004_LightGBMScoreRanking.py (features = Base engineered features)
-Features: (slope, average, stdev) of Base composite scores
+Features: slope / average / stdev of composite scores
 
-Same LightGBM training / prediction framework
+Output: LightGBMScoreRanking/year=*/LightGBMscore_rank_YYYYMMDD.parquet
 
-Writes:
+_0004_RidgeInvestmentRanking.py
 
-text
-Copier le code
-LightGBMScoreRanking/year=YYYY/LightGBMscore_rank_YYYYMMDD.parquet
-<!-- :contentReference[oaicite:12]{index=12} -->
-_0004_RidgeInvestmentRanking.py (features = raw ratios)
 Features: raw ratios
 
-Targets: forward returns at 3m / 6m / 12m; blended into one ranking score
+Output: RidgeRanking/year=*/ridgerank_YYYYMMDD.parquet
 
-Writes:
+_0004_RidgeScoreRanking.py
 
-text
-Copier le code
-RidgeRanking/year=YYYY/ridgerank_YYYYMMDD.parquet
-<!-- :contentReference[oaicite:13]{index=13} -->
-_0004_RidgeScoreRanking.py (features = Base engineered features)
-Features: (slope, average, stdev) of Base composite scores
+Features: slope / average / stdev of composite scores
 
-Same Ridge training / prediction framework
+Output: RidgeScoreRanking/year=*/ridgescore_rank_YYYYMMDD.parquet
 
-Writes:
+Step 5 — Top/bottom decile selection (all models)
 
-text
-Copier le code
-RidgeScoreRanking/year=YYYY/ridgescore_rank_YYYYMMDD.parquet
-<!-- :contentReference[oaicite:14]{index=14} -->
-_0005_TopBottom10.py — Top/bottom decile selection (ALL models)
-For each investment snapshot:
+_0005_TopBottom10.py
 
-takes top 10% (signal = +1)
+Reads each model’s ranking snapshots
 
-takes bottom 10% (signal = −1), disjoint from longs
+Selects:
 
-Writes:
+Top 10% → signal = +1
 
-text
-Copier le code
-BaseTopBottom10/year=YYYY/topbottom10_YYYYMMDD.parquet
-LightGBMTopBottom10/year=YYYY/topbottom10_YYYYMMDD.parquet
-LightGBMScoreTopBottom10/year=YYYY/topbottom10_YYYYMMDD.parquet
-RidgeTopBottom10/year=YYYY/topbottom10_YYYYMMDD.parquet
-RidgeScoreTopBottom10/year=YYYY/topbottom10_YYYYMMDD.parquet
-_0006_Performance.py — Daily performance, cohort aggregation, VAMI per model
-Builds overlapping 12-month cohorts rebalanced quarterly (new cohort each quarter)
+Bottom 10% → signal = -1
 
-Produces daily series for:
+Ensures long/short sets are disjoint
+
+Writes per-model snapshots:
+
+BaseTopBottom10/year=*/topbottom10_YYYYMMDD.parquet
+LightGBMTopBottom10/year=*/topbottom10_YYYYMMDD.parquet
+LightGBMScoreTopBottom10/year=*/topbottom10_YYYYMMDD.parquet
+RidgeTopBottom10/year=*/topbottom10_YYYYMMDD.parquet
+RidgeScoreTopBottom10/year=*/topbottom10_YYYYMMDD.parquet
+
+Step 6 — Daily performance (L/S + legs) + per-model VAMI
+
+_0006_Performance.py
+
+Builds overlapping 12-month cohorts (quarterly rebalancing, 1-year holding)
+
+Produces daily series:
 
 Long leg returns
 
 Short leg returns (P&L convention)
 
-Long–short (L/S)
+Long–short returns
 
-Outputs per model:
+Saves:
 
-text
-Copier le code
 FilteredRawData/[Model]LS_Returns.parquet
+
 FilteredRawData/[Model]Long_Returns.parquet
+
 FilteredRawData/[Model]Short_Returns.parquet
+
 [Model]PerfMeasure.csv
-[Model]VAMI.jpg
-[Model]VAMI_Long.jpg
-[Model]VAMI_Short.jpg
-Performance metrics include Sharpe/Sortino/max drawdown and other diagnostics. <!-- :contentReference[oaicite:15]{index=15} -->
 
-_0007_FFRegression.py — FF5+Momentum regression on L/S (ALL models)
-OLS regression: L/S daily returns on FF5 + Momentum
+[Model]VAMI.jpg, [Model]VAMI_Long.jpg, [Model]VAMI_Short.jpg
 
-Writes:
+Step 7 — FF5 + Momentum regression on L/S (all models)
 
-text
-Copier le code
+_0007_FFRegression.py
+
+Regresses daily L/S returns on FF5 + Mom
+
+Outputs:
+
 [Model]OLSFama.csv
-[Model]RollingAlpha.jpg    # 5-year rolling alpha
-Alpha decomposition and rolling alpha are used to compare model robustness across regimes. <!-- :contentReference[oaicite:16]{index=16} -->
 
-_0008_FFLegsRegression.py — FF5+Momentum regressions on Long and Short legs (ALL models)
-OLS regressions:
+[Model]RollingAlpha.jpg (5-year rolling alpha)
 
-Long leg returns on FF5+Mom
+Step 8 — FF5 + Momentum regressions on long & short legs (all models)
 
-Short leg returns on FF5+Mom
+_0008_FFLegsRegression.py
 
-Writes:
+Separate regressions for:
 
-text
-Copier le code
+Long leg
+
+Short leg (P&L convention)
+
+Outputs:
+
 [Model]OLSFamaLong.csv
+
 [Model]OLSFamaShort.csv
-_0009_VAMI.py — Global VAMI (ALL models on one chart)
-Produces a single chart comparing cumulative performance across models (and optionally vs market factor, depending on your implementation).
 
-Output typically saved as a .jpg/.png figure.
+Step 9 — Consolidated VAMI (multi-model comparison)
 
-_0010_HitRates.py — Hit rates (ALL models)
-Computes hit rates (directional accuracy) for:
+_0009_VAMI.py
+
+Builds multi-line VAMI charts comparing:
+
+All L/S models vs market factor
+
+(optionally) legs across models
+
+Useful for a single “dashboard” view beyond per-model charts.
+
+Step 10 — Hit rates
+
+_0010_HitRates.py
+
+Computes hit rates for:
 
 L/S
 
@@ -251,50 +323,51 @@ Long leg
 
 Short leg
 
-Outputs a summary table (CSV) with hit rates per model. <!-- :contentReference[oaicite:17]{index=17} -->
+Produces summary tables (CSV) for quick model comparison.
 
-3) How to run (step-by-step)
+5) How to run (step-by-step)
+
 From the project root:
 
-bash
-Copier le code
 # 1) Raw SAS -> Parquet
 python _0001_RawDataProcessing.py
 
 # 2) Fundamental ratios
 python _0002_RatiosCalculation.py
 
-# 3) Base anchor rankings
+# 3) Base anchor composite ranking
 python _0003_AnchorRanking.py
 
-# 4) Investment rankings (5 variants)
+# 4) Investment rankings (Base + 4 ML variants)
 python _0004_BaseInvestmentRanking.py
 python _0004_LightGBMInvestmentRanking.py
 python _0004_LightGBMScoreRanking.py
 python _0004_RidgeInvestmentRanking.py
 python _0004_RidgeScoreRanking.py
 
-# 5) Top/bottom deciles
+# 5) Top/bottom deciles (all models)
 python _0005_TopBottom10.py
 
-# 6) Performance + per-model VAMI
+# 6) Daily performance + VAMI per model
 python _0006_Performance.py
 
-# 7) FF regressions on LS + rolling alpha
+# 7) FF5+Mom regression on L/S (all models)
 python _0007_FFRegression.py
 
-# 8) FF regressions on legs
+# 8) FF5+Mom regressions on legs (all models)
 python _0008_FFLegsRegression.py
 
-# 9) One chart: VAMI of all models
+# 9) Consolidated VAMI
 python _0009_VAMI.py
 
-# 10) Hit rates per model
+# 10) Hit rates
 python _0010_HitRates.py
-4) Dependencies
+
+6) Dependencies
+
 Python ≥ 3.10 recommended.
 
-Core:
+Core stack:
 
 polars
 
@@ -306,22 +379,34 @@ pyarrow
 
 matplotlib
 
-Models:
+Modeling:
 
 lightgbm
 
 scikit-learn
 
-Example:
+Install:
 
-bash
-Copier le code
 pip install polars numpy pandas pyarrow matplotlib lightgbm scikit-learn
-5) License & data disclaimer
-Code: choose a license (e.g., MIT) and add a LICENSE file.
 
-Data: CRSP and Compustat are proprietary (WRDS/S&P Global licensing).
-This repository does not include any raw WRDS data. Users are responsible for obtaining access and complying with licensing terms.
+7) Reproducibility and no-look-ahead
 
-6) Reference report (methodology + results)
-A full write-up of the methodology, modeling choices, and empirical results is available in the project report. <!-- :contentReference[oaicite:18]{index=18} -->
+This project is designed to be strictly out-of-sample:
+
+Fundamentals are aligned to investment dates with reporting/availability logic
+
+ML training uses rolling history and only outcomes that have fully elapsed by the training cut
+
+Comparisons are fair: all variants are fed the same underlying information set, either as raw ratios or as Base-style engineered score dynamics
+
+8) Report / methodology note
+
+A full write-up of the methodology, modeling choices, and results is provided in:
+
+Nikonov_Ivan_Report-ADA.pdf
+
+9) License & data disclaimer
+
+Code: choose an OSS license (e.g. MIT) and add it to the repository.
+
+Data: CRSP / Compustat are proprietary (WRDS). This repo contains no licensed data. Users must obtain their own access and comply with WRDS / CRSP / S&P Global terms.
