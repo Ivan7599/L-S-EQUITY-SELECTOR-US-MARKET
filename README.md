@@ -1,69 +1,66 @@
-L-S-EQUITY-SELECTOR-US-MARKET
+# L-S-EQUITY-SELECTOR-US-MARKET
 
-Systematic US equity long/short stock selection with an explicit research question:
+Systematic **US equity long/short stock selection** with an explicit research question:
 
-Is machine learning stronger than economical logic when both use the same fundamental information set under strict anti-overfitting constraints?
+> **Is machine learning stronger than economical logic** when both use the same fundamental information set under strict anti-overfitting constraints?
 
 This repository implements an end-to-end pipeline using:
 
-CRSP daily prices/returns (US common stocks; financials excluded)
+* **CRSP daily** prices/returns (US common stocks; **financials excluded**)
+* **Compustat quarterly** fundamentals (US firms; **financials excluded**)
+* **Fama–French 5 factors (daily)** + **Momentum (daily)** for alpha attribution
 
-Compustat quarterly fundamentals (US firms; financials excluded)
+We build **profitability / valuation / quality** characteristics, produce **five investable rankings** (Base + 4 ML variants), form **top/bottom decile long–short portfolios** at quarterly investment dates, and evaluate:
 
-Fama–French 5 factors (daily) + Momentum (daily) for alpha attribution
+* **L/S and leg performance** (Sharpe, Sortino, drawdown, etc.)
+* **FF5+Mom alphas** (full-sample + rolling)
+* **VAMI charts** (single-model and multi-model comparisons)
+* **Hit rates** (L/S, Long, Short)
 
-We build profitability / valuation / quality characteristics, produce five investable rankings (Base + 4 ML variants), form top/bottom decile long–short portfolios at quarterly investment dates, and evaluate:
+> ⚠ **Important:** This project requires a valid **WRDS license**.
+> CRSP / Compustat data are proprietary and **cannot be included** in this repository.
 
-L/S and leg performance (Sharpe, Sortino, drawdown, etc.)
+---
 
-FF5+Mom alphas (full-sample + rolling)
+## 1) Data requirements
 
-VAMI charts (single-model and multi-model comparisons)
+You must source raw data from **WRDS**:
 
-Hit rates (L/S, Long, Short)
+1. Download from WRDS:
 
-⚠ Important: This project requires a valid WRDS license.
-CRSP / Compustat data are proprietary and cannot be included in this repository.
+* **CRSP** → US Stock → Daily Stock File
+* **Compustat North America** → Fundamentals Quarterly
 
-1) Data requirements
+2. Recommended universe filters:
 
-You must source raw data from WRDS:
+* US **common stocks only**
+* **Exclude financial institutions** (SIC/GICS or WRDS filter)
+* Date range (e.g. 1980–today)
 
-Download from WRDS:
+3. Export as **SAS** files named:
 
-CRSP → US Stock → Daily Stock File
+* `RawReturns.sas7bdat` (CRSP daily)
+* `RawFundamentals.sas7bdat` (Compustat quarterly)
 
-Compustat North America → Fundamentals Quarterly
+4. Create this folder in the project root:
 
-Recommended universe filters:
-
-US common stocks only
-
-Exclude financial institutions (SIC/GICS or WRDS filter)
-
-Date range (e.g. 1980–today)
-
-Export as SAS files named:
-
-RawReturns.sas7bdat (CRSP daily)
-
-RawFundamentals.sas7bdat (Compustat quarterly)
-
-Create this folder in the project root:
-
+```text
 RawDatabase/
     RawReturns.sas7bdat
     RawFundamentals.sas7bdat
     Factors5.csv      # Fama–French 5 factors (daily)
     Momentum.csv      # Momentum factor (daily)
+```
 
+`Factors5.csv` and `Momentum.csv` should be the standard **Kenneth French daily factor files** saved as CSV.
 
-Factors5.csv and Momentum.csv should be the standard Kenneth French daily factor files saved as CSV.
+---
 
-2) Repository structure
+## 2) Repository structure
 
 After running the pipeline, the project will contain (high-level):
 
+```text
 FilteredRawData/
     Returns_ds/               # CRSP daily returns, Parquet, partitioned by year=YYYY
     Fundamentals_q/           # Compustat quarterly, Parquet, partitioned by year=YYYY
@@ -90,245 +87,234 @@ LightGBMScoreTopBottom10/
 RidgeTopBottom10/
 RidgeScoreTopBottom10/
     year=YYYY/topbottom10_YYYYMMDD.parquet
+```
 
-3) Models and feature sets
+---
 
-All models ultimately produce a cross-sectional ranking at each investment date. Portfolios are then formed by:
+## 3) Models and feature sets
 
-Long: top 10%
+All models ultimately produce a **cross-sectional ranking at each investment date**. Portfolios are then formed by:
 
-Short: bottom 10%
+* **Long**: top **10%**
+* **Short**: bottom **10%**
+* Signals: `signal = +1` (long), `signal = -1` (short)
+* Always **1 USD long / 1 USD short** (dollar-neutral by construction)
 
-Signals: signal = +1 (long), signal = -1 (short)
-
-Always 1 USD long / 1 USD short (dollar-neutral by construction)
-
-3.1 Base model (economical logic)
+### 3.1 Base model (economical logic)
 
 A transparent baseline grounded in economic intuition:
 
-Build a composite score from profitability, valuation, and quality pillars at each anchor date.
+* Build a **composite score** from profitability, valuation, and quality pillars at each anchor date.
+* Convert the score into a persistent signal using **3-year dynamics**:
 
-Convert the score into a persistent signal using 3-year dynamics:
+  * **Average (level)**
+  * **Slope (trend)**
+  * **Stability** (volatility / variability of score changes)
+* Combine these into a single investment score and rank stocks cross-sectionally.
 
-Average (level)
-
-Slope (trend)
-
-Stability (volatility / variability of score changes)
-
-Combine these into a single investment score and rank stocks cross-sectionally.
-
-3.2 Machine-learning models (two feature configurations)
+### 3.2 Machine-learning models (two feature configurations)
 
 Each ML family is evaluated under two feature sets:
 
-A) Raw ratios as features
+**A) Raw ratios as features**
 
-Uses the cross-sectional raw fundamental ratios directly as predictors.
+* Uses the cross-sectional **raw fundamental ratios** directly as predictors.
 
-B) “Score features” (same information content as Base dynamics)
+**B) “Score features” (same information content as Base dynamics)**
 
-Uses only engineered features derived from the composite score over the last 3 years:
+* Uses **only engineered features derived from the composite score** over the last 3 years:
 
-slope / average / stdev (trend, level, stability)
+  * slope / average / stdev (trend, level, stability)
 
 Models:
 
-LightGBMInvestmentRanking → LightGBM with raw ratios
+* **LightGBMInvestmentRanking** → LightGBM with **raw ratios**
+* **LightGBMScoreRanking** → LightGBM with **score features**
+* **RidgeInvestmentRanking** → Ridge regression with **raw ratios**
+* **RidgeScoreRanking** → Ridge regression with **score features**
 
-LightGBMScoreRanking → LightGBM with score features
+---
 
-RidgeInvestmentRanking → Ridge regression with raw ratios
+## 4) Pipeline (run in order)
 
-RidgeScoreRanking → Ridge regression with score features
+### Step 1 — WRDS SAS → Parquet (year-partitioned)
 
-4) Pipeline (run in order)
-Step 1 — WRDS SAS → Parquet (year-partitioned)
+**`_0001_RawDataProcessing.py`**
 
-_0001_RawDataProcessing.py
+* Reads `RawReturns.sas7bdat` and `RawFundamentals.sas7bdat`
+* Cleans identifiers and dates
+* Excludes financials
+* Writes year-partitioned Parquet datasets:
 
-Reads RawReturns.sas7bdat and RawFundamentals.sas7bdat
-
-Cleans identifiers and dates
-
-Excludes financials
-
-Writes year-partitioned Parquet datasets:
-
+```text
 FilteredRawData/Returns_ds/year=YYYY/*.parquet
 FilteredRawData/Fundamentals_q/year=YYYY/*.parquet
+```
 
-Step 2 — Ratios computation (profitability / valuation / quality)
+---
 
-_0002_RatiosCalculation.py
+### Step 2 — Ratios computation (profitability / valuation / quality)
 
-Aligns quarterly fundamentals to investment “as-of” dates (quarterly anchors)
+**`_0002_RatiosCalculation.py`**
 
-Computes a set of fundamental ratios spanning:
+* Aligns quarterly fundamentals to investment “as-of” dates (quarterly anchors)
+* Computes a set of **fundamental ratios** spanning:
 
-Profitability
+  * Profitability
+  * Valuation
+  * Quality
+* Cleans / winsorizes / standardizes directions (“higher is better”)
+* Writes one snapshot per anchor:
 
-Valuation
-
-Quality
-
-Cleans / winsorizes / standardizes directions (“higher is better”)
-
-Writes one snapshot per anchor:
-
+```text
 Ratios/year=YYYY/ratios_YYYYMMDD.parquet
+```
 
-Step 3 — Anchor composite ranking (Base score per anchor)
+---
 
-_0003_AnchorRanking.py
+### Step 3 — Anchor composite ranking (Base score per anchor)
 
-Aggregates ratios into a composite anchor score
+**`_0003_AnchorRanking.py`**
 
-Writes per-anchor snapshots:
+* Aggregates ratios into a **composite anchor score**
+* Writes per-anchor snapshots:
 
+```text
 BaseAnchorRanking/year=YYYY/anchor_YYYYMMDD.parquet
+```
 
-Step 4 — Investment-date rankings (Base + 4 ML variants)
+---
+
+### Step 4 — Investment-date rankings (Base + 4 ML variants)
 
 These scripts produce investable rankings at each investment date:
 
-_0004_BaseInvestmentRanking.py
+* **`_0004_BaseInvestmentRanking.py`**
 
-Features: score slope / average / stability over a 3-year lookback
+  * Features: score **slope / average / stability** over a 3-year lookback
+  * Output: `BaseInvestmentRanking/year=*/invrank_YYYYMMDD.parquet`
 
-Output: BaseInvestmentRanking/year=*/invrank_YYYYMMDD.parquet
+* **`_0004_LightGBMInvestmentRanking.py`**
 
-_0004_LightGBMInvestmentRanking.py
+  * Features: **raw ratios**
+  * Output: `LightGBMInvestmentRanking/year=*/LightGBMrank_YYYYMMDD.parquet`
 
-Features: raw ratios
+* **`_0004_LightGBMScoreRanking.py`**
 
-Output: LightGBMInvestmentRanking/year=*/LightGBMrank_YYYYMMDD.parquet
+  * Features: **slope / average / stdev** of composite scores
+  * Output: `LightGBMScoreRanking/year=*/LightGBMscore_rank_YYYYMMDD.parquet`
 
-_0004_LightGBMScoreRanking.py
+* **`_0004_RidgeInvestmentRanking.py`**
 
-Features: slope / average / stdev of composite scores
+  * Features: **raw ratios**
+  * Output: `RidgeRanking/year=*/ridgerank_YYYYMMDD.parquet`
 
-Output: LightGBMScoreRanking/year=*/LightGBMscore_rank_YYYYMMDD.parquet
+* **`_0004_RidgeScoreRanking.py`**
 
-_0004_RidgeInvestmentRanking.py
+  * Features: **slope / average / stdev** of composite scores
+  * Output: `RidgeScoreRanking/year=*/ridgescore_rank_YYYYMMDD.parquet`
 
-Features: raw ratios
+---
 
-Output: RidgeRanking/year=*/ridgerank_YYYYMMDD.parquet
+### Step 5 — Top/bottom decile selection (all models)
 
-_0004_RidgeScoreRanking.py
+**`_0005_TopBottom10.py`**
 
-Features: slope / average / stdev of composite scores
+* Reads each model’s ranking snapshots
+* Selects:
 
-Output: RidgeScoreRanking/year=*/ridgescore_rank_YYYYMMDD.parquet
+  * **Top 10%** → `signal = +1`
+  * **Bottom 10%** → `signal = -1`
+  * Ensures long/short sets are **disjoint**
+* Writes per-model snapshots:
 
-Step 5 — Top/bottom decile selection (all models)
-
-_0005_TopBottom10.py
-
-Reads each model’s ranking snapshots
-
-Selects:
-
-Top 10% → signal = +1
-
-Bottom 10% → signal = -1
-
-Ensures long/short sets are disjoint
-
-Writes per-model snapshots:
-
+```text
 BaseTopBottom10/year=*/topbottom10_YYYYMMDD.parquet
 LightGBMTopBottom10/year=*/topbottom10_YYYYMMDD.parquet
 LightGBMScoreTopBottom10/year=*/topbottom10_YYYYMMDD.parquet
 RidgeTopBottom10/year=*/topbottom10_YYYYMMDD.parquet
 RidgeScoreTopBottom10/year=*/topbottom10_YYYYMMDD.parquet
+```
 
-Step 6 — Daily performance (L/S + legs) + per-model VAMI
+---
 
-_0006_Performance.py
+### Step 6 — Daily performance (L/S + legs) + per-model VAMI
 
-Builds overlapping 12-month cohorts (quarterly rebalancing, 1-year holding)
+**`_0006_Performance.py`**
 
-Produces daily series:
+* Builds **overlapping 12-month cohorts** (quarterly rebalancing, 1-year holding)
+* Produces daily series:
 
-Long leg returns
+  * Long leg returns
+  * Short leg returns (**P&L convention**)
+  * Long–short returns
+* Saves:
 
-Short leg returns (P&L convention)
+  * `FilteredRawData/[Model]LS_Returns.parquet`
+  * `FilteredRawData/[Model]Long_Returns.parquet`
+  * `FilteredRawData/[Model]Short_Returns.parquet`
+  * `[Model]PerfMeasure.csv`
+  * `[Model]VAMI.jpg`, `[Model]VAMI_Long.jpg`, `[Model]VAMI_Short.jpg`
 
-Long–short returns
+---
 
-Saves:
+### Step 7 — FF5 + Momentum regression on L/S (all models)
 
-FilteredRawData/[Model]LS_Returns.parquet
+**`_0007_FFRegression.py`**
 
-FilteredRawData/[Model]Long_Returns.parquet
+* Regresses daily **L/S returns** on **FF5 + Mom**
+* Outputs:
 
-FilteredRawData/[Model]Short_Returns.parquet
+  * `[Model]OLSFama.csv`
+  * `[Model]RollingAlpha.jpg` (5-year rolling alpha)
 
-[Model]PerfMeasure.csv
+---
 
-[Model]VAMI.jpg, [Model]VAMI_Long.jpg, [Model]VAMI_Short.jpg
+### Step 8 — FF5 + Momentum regressions on long & short legs (all models)
 
-Step 7 — FF5 + Momentum regression on L/S (all models)
+**`_0008_FFLegsRegression.py`**
 
-_0007_FFRegression.py
+* Separate regressions for:
 
-Regresses daily L/S returns on FF5 + Mom
+  * Long leg
+  * Short leg (P&L convention)
+* Outputs:
 
-Outputs:
+  * `[Model]OLSFamaLong.csv`
+  * `[Model]OLSFamaShort.csv`
 
-[Model]OLSFama.csv
+---
 
-[Model]RollingAlpha.jpg (5-year rolling alpha)
+### Step 9 — Consolidated VAMI (multi-model comparison)
 
-Step 8 — FF5 + Momentum regressions on long & short legs (all models)
+**`_0009_VAMI.py`**
 
-_0008_FFLegsRegression.py
+* Builds multi-line VAMI charts comparing:
 
-Separate regressions for:
+  * All L/S models vs market factor
+  * (optionally) legs across models
+* Useful for a single “dashboard” view beyond per-model charts.
 
-Long leg
+---
 
-Short leg (P&L convention)
+### Step 10 — Hit rates
 
-Outputs:
+**`_0010_HitRates.py`**
 
-[Model]OLSFamaLong.csv
+* Computes hit rates for:
 
-[Model]OLSFamaShort.csv
+  * L/S
+  * Long leg
+  * Short leg
+* Produces summary tables (CSV) for quick model comparison.
 
-Step 9 — Consolidated VAMI (multi-model comparison)
+---
 
-_0009_VAMI.py
-
-Builds multi-line VAMI charts comparing:
-
-All L/S models vs market factor
-
-(optionally) legs across models
-
-Useful for a single “dashboard” view beyond per-model charts.
-
-Step 10 — Hit rates
-
-_0010_HitRates.py
-
-Computes hit rates for:
-
-L/S
-
-Long leg
-
-Short leg
-
-Produces summary tables (CSV) for quick model comparison.
-
-5) How to run (step-by-step)
+## 5) How to run (step-by-step)
 
 From the project root:
 
+```bash
 # 1) Raw SAS -> Parquet
 python _0001_RawDataProcessing.py
 
@@ -362,51 +348,54 @@ python _0009_VAMI.py
 
 # 10) Hit rates
 python _0010_HitRates.py
+```
 
-6) Dependencies
+---
+
+## 6) Dependencies
 
 Python ≥ 3.10 recommended.
 
 Core stack:
 
-polars
-
-numpy
-
-pandas
-
-pyarrow
-
-matplotlib
+* `polars`
+* `numpy`
+* `pandas`
+* `pyarrow`
+* `matplotlib`
 
 Modeling:
 
-lightgbm
-
-scikit-learn
+* `lightgbm`
+* `scikit-learn`
 
 Install:
 
+```bash
 pip install polars numpy pandas pyarrow matplotlib lightgbm scikit-learn
+```
 
-7) Reproducibility and no-look-ahead
+---
 
-This project is designed to be strictly out-of-sample:
+## 7) Reproducibility and no-look-ahead
 
-Fundamentals are aligned to investment dates with reporting/availability logic
+This project is designed to be **strictly out-of-sample**:
 
-ML training uses rolling history and only outcomes that have fully elapsed by the training cut
+* Fundamentals are aligned to investment dates with reporting/availability logic
+* ML training uses rolling history and only outcomes that have fully elapsed by the training cut
+* Comparisons are fair: all variants are fed the **same underlying information set**, either as raw ratios or as Base-style engineered score dynamics
 
-Comparisons are fair: all variants are fed the same underlying information set, either as raw ratios or as Base-style engineered score dynamics
+---
 
-8) Report / methodology note
+## 8) Report / methodology note
 
 A full write-up of the methodology, modeling choices, and results is provided in:
 
-Nikonov_Ivan_Report-ADA.pdf
+* `Nikonov_Ivan_Report-ADA.pdf`
 
-9) License & data disclaimer
+---
 
-Code: choose an OSS license (e.g. MIT) and add it to the repository.
+## 9) License & data disclaimer
 
-Data: CRSP / Compustat are proprietary (WRDS). This repo contains no licensed data. Users must obtain their own access and comply with WRDS / CRSP / S&P Global terms.
+* **Code:** choose an OSS license (e.g. MIT) and add it to the repository.
+* **Data:** CRSP / Compustat are proprietary (WRDS). This repo contains **no licensed data**. Users must obtain their own access and comply with WRDS / CRSP / S&P Global terms.
